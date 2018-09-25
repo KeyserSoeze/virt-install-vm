@@ -1,0 +1,196 @@
+#!/bin/bash
+# virt-install-vm 0.4.0
+# Matthias Wernicke, Copyright under GPLv3
+# For information see --help and https://github.com/KeyserSoeze/virt-install-vm
+
+### FUNCTIONS
+function help_quit() {
+  echo -e "Usage: virt-install-vm [OPTION]... [CONFIG-FILE]\n"
+  echo -e "Read VM- and Preseed-Variables from CONFIG-FILE and other sources, generate preseed files and call virt-install(libvirt-API) accordingly.\n"
+  echo -e "Options:"
+  echo -e "  -n, --name		Virsh-Name of VM"
+  echo -e "  -r, --ram		RAM in MB"
+  echo -e "  -6, --ip6		Last part of IPv6-Address"
+  echo -e "  -4, --ip4		IPv4-Address"
+  echo -e "  --init-dir		Copy config templates into current directory"
+  echo -e "  --dry-run		Only show but not execute calls to libvirt-API"
+  echo -e "  --legacy		For old versions of virt-install: Use virsh to create LVM LV as Bugfix"
+  echo -e "  -q, --quiet		Dont show verbose infos and dont wait for confirmation"
+  echo -e "  -h, --help		Show this help message\n"
+  echo -e "For more information, manual and source goto: https://github.com/KeyserSoeze/virt-install-vm"
+  if [ -n "${1// }" ]; then echo -e "\n\e[91mERROR: $1\e[39m"; fi
+  #debug_vars
+  clean_up
+  exit 1
+}
+
+function check_requirements() {
+  if ! type virt-install > /dev/null; then help_quit "Missing dependencies (please install package 'virtinst')!"; fi
+  if ! type mkpasswd virsh > /dev/null; then echo "WARNING: Commands 'mkpasswd' and 'virsh' could be needed in some cases."; fi
+  if ! awk --version | grep -q "GNU Awk"; then echo "WARNING: Not tested with your version of awk. Maybe you need to install package 'gawk'."; fi
+}
+
+function init_dir() {
+  if [ -n "$INIT_DIR_SRC" ] && [ -d "$INIT_DIR_SRC" ]; then
+    echo "Copy templates into current directory - please modify to your needs!"
+    TMP_PWD=$PWD; cd "$INIT_DIR_SRC"
+    cp -i $(ls -A | grep -Exv "$INIT_DIR_EXCLUDE") "$TMP_PWD"
+    cd "$TMP_PWD"; exit 0
+  else
+    help_quit "INIT_DIR_SRC is not set or is not a directory!"
+  fi
+}
+
+function clean_up() {
+  if [ -n "$INJECT_TMPDIR1" ] || [ -n "$INJECT_TMPDIR2" ]; then
+    rm -rf $INJECT_TMPDIR1 $INJECT_TMPDIR2
+  fi
+}
+
+### MAIN
+## Prepare & check environment
+# Make sure all variables are exported for use with awk & set internal defaults:
+set -a
+VERSION="0.4.0"
+INIT_DIR_EXCLUDE="virt-install-vm|.virt-install-vm.cfg|README.md|LICENSE|.git|.gitignore"
+# Check requirements:
+check_requirements
+
+## Process command line options
+# Set defaults for flags:
+HELP_QUIT=""
+INIT_DIR=false
+DRY_RUN=false
+QUIET=false
+LEGACY=false
+# Call getopt with option strings & set result into environment:
+CMDOPTS=$(getopt -o hn:r:6:4:q --long help,name:,ram:,ip6:,ip4:,init-dir,dry-run,quiet,legacy -- "$@")
+eval set -- "$CMDOPTS"
+# Process & shift positional parameters until only non-option parameters left:
+while true; do
+  case "$1" in
+    -h|--help) HELP_QUIT=" "; shift ;;
+    --init-dir) INIT_DIR=true; shift ;;
+    --dry-run) DRY_RUN=true; shift ;;
+    --legacy) LEGACY=true; shift ;;
+    -q|--quiet) QUIET=true; shift ;;
+    -n|--name)
+      case "$2" in
+        "") shift 2 ;;
+        *) readonly VM_NAME="$2"; shift 2 ;;
+      esac;;
+    -r|--ram)
+      case "$2" in
+        "") shift 2 ;;
+        *) readonly VM_RAM="$2"; shift 2 ;;
+      esac;;
+    -6|--ip6)
+      case "$2" in
+        "") shift 2 ;;
+        *) readonly PRESEED_IP6_SUFFIX="$2"; shift 2 ;;
+      esac;;
+    -4|--ip4)
+      case "$2" in
+        "") shift 2 ;;
+        *) readonly PRESEED_IP4_ADDR="$2"; shift 2 ;;
+      esac;;
+    --) shift; break ;;
+    *) HELP_QUIT="Internal error while processing command line options!" ;;
+  esac
+done
+
+## Set auto values & source config files
+if [ -z "$VM_NAME" ] && [ -n "$1" ]; then VM_NAME=$(basename $1); VM_NAME="${VM_NAME%%.*}"; fi
+if [ -f "$HOME/.virt-install-vm.cfg" ]; then source "$HOME/.virt-install-vm.cfg" 2>/dev/null; fi
+if [ -f "virt-install-vm.cfg" ]; then source virt-install-vm.cfg 2>/dev/null; fi
+if [ -n "$1" ]; then source "$1" 2>/dev/null; fi
+
+## Print infos, check for special modes & necessary configs
+# Print version if not quiet:
+if [ ! "$QUIET" = true ]; then echo -e "virt-install-vm $VERSION\n"; fi
+# Show help and exit if asked for help or called with wrong options:
+if [ -n "$HELP_QUIT" ]; then help_quit "$HELP_QUIT"; fi
+# If flag "--init-dir" then copy templates into current directory end exit:
+if [ "$INIT_DIR" = true ]; then init_dir; fi
+# Check for necessary configs and exit if missing:
+if [ -z "$VM_NAME" ]; then help_quit "Missing VM_NAME!"; fi
+if [ -z "$VM_INSTALL_SRC_LOCATION" ]; then help_quit "Missing VM_INSTALL_SRC_LOCATION!"; fi
+# If in dry-run mode then print hint:
+if [ "$DRY_RUN" = true ]; then echo -e "*** DRY-RUN ***\n"; fi
+# Check for optional configs or ask for password:
+if [ -z "$PRESEED_TEMPLATE" ]; then echo "WARNING: Missing PRESEED_TEMPLATE."; fi
+if [ -z "$PRESEED_PWDHASH" ]; then echo "Generating missing password-hash ..."; PRESEED_PWDHASH=$(mkpasswd -m sha-512); fi
+
+## Create preseed.cfg with awk substitution
+INJECT_TMPDIR1=$(mktemp -d)
+if [ -n "$PRESEED_TEMPLATE" ]; then
+  awk '{ while (match($0, /{{[A-Za-z0-9_\-]+}}/) != 0) { var=("PRESEED_" substr($0, RSTART+2, RLENGTH-4)); sub(/{{[A-Za-z0-9_\-]+}}/, ENVIRON[var]) }; print $0 }' $PRESEED_TEMPLATE > $INJECT_TMPDIR1/preseed.cfg
+  if [ ! "$QUIET" = true ]; then
+    echo "Show generated preseed.cfg ... "; more $INJECT_TMPDIR1/preseed.cfg
+  fi
+fi
+
+## Create preseed.tar for all other files to inject into initrd
+INJECT_TMPDIR2=$(mktemp -d)
+cp -rL $INJECT_FILES $INJECT_TMPDIR2
+if [ "$QUIET" = true ]; then
+  tar -cf $INJECT_TMPDIR1/preseed.tar -C $INJECT_TMPDIR2 .
+else
+  echo -e "\nInject preseed.cfg & this files into initrd:"
+  tar -cvf $INJECT_TMPDIR1/preseed.tar -C $INJECT_TMPDIR2 .
+fi
+
+## Build calls to libvirt-API
+if [ -n "$VIRSH_URI" ]; then CONNECT_VIRSH_URI="--connect $VIRSH_URI"; fi
+if [ -n "$VM_NET2" ]; then VM_NETWORK2="--network network=${VM_NET2},model=${VM_NET_MODEL}"; fi
+if [ -n "$PRESEED_TEMPLATE" ]; then VM_PRESEED_CFG="--initrd-inject=$INJECT_TMPDIR1/preseed.cfg"; fi
+if [ "$LEGACY" = true ]; then
+  VIRSH_CALL="virsh $CONNECT_VIRSH_URI vol-create-as ${VM_DISK_POOL} ${VM_DISK_NAME} ${VM_DISK_SIZE}G"
+  VIRT_INSTALL_CALL="virt-install $CONNECT_VIRSH_URI\
+	--name $VM_NAME --ram $VM_RAM\
+	--network network=${VM_NET},model=${VM_NET_MODEL} ${VM_NETWORK2}\
+	--disk path=/dev/${VM_DISK_VG}/${VM_DISK_NAME},bus=${VM_DISK_MODEL}\
+	--graphics $VM_GRAPHICS $VM_ADD_OPTIONS\
+	--os-type $VM_OS_TYPE --os-variant $VM_OS_VARIANT\
+	--location $VM_INSTALL_SRC_LOCATION\
+	$VM_PRESEED_CFG --initrd-inject=$INJECT_TMPDIR1/preseed.tar\
+	--extra-args=$VM_EXTRA_ARGS"
+else
+  VIRT_INSTALL_CALL="virt-install $CONNECT_VIRSH_URI\
+	--name $VM_NAME --ram $VM_RAM\
+	--network network=${VM_NET},model=${VM_NET_MODEL} ${VM_NETWORK2}\
+	--disk size=${VM_DISK_SIZE},pool=${VM_DISK_POOL},bus=${VM_DISK_MODEL}\
+	--graphics $VM_GRAPHICS $VM_ADD_OPTIONS\
+	--os-type $VM_OS_TYPE --os-variant $VM_OS_VARIANT\
+	--location $VM_INSTALL_SRC_LOCATION\
+	$VM_PRESEED_CFG --initrd-inject=$INJECT_TMPDIR1/preseed.tar\
+	--extra-args=$VM_EXTRA_ARGS"
+fi
+
+## Start installation i.e. perform calls to libvirt-API
+if [ ! "$QUIET" = true ]; then
+  echo -en "\nInstalling VM \"$VM_NAME\" with $VM_RAM RAM on libvirt Network(s) \"$VM_NET/$VM_NET2\" as type ${VM_OS_TYPE}/${VM_OS_VARIANT} (on VirshURI $CONNECT_VIRSH_URI) with previously shown preseed-files.\nPress Enter to Continue or Ctrl+C to Abort: "; read
+  echo -en "\nStarting Installation at: "; date
+fi
+if [ "$LEGACY" = true ]; then
+  if [ ! "$QUIET" = true ]; then echo -e "\nCalling: $VIRSH_CALL"; fi
+  if [ ! "$DRY_RUN" = true ]; then $VIRSH_CALL; fi
+fi
+if [ ! "$QUIET" = true ]; then echo -e "\nCalling: $VIRT_INSTALL_CALL"; fi
+if [ ! "$DRY_RUN" = true ]; then $VIRT_INSTALL_CALL; fi
+
+## Perform finishing tasks
+# Perform clean up & list running VMs:
+#debug_vars
+if [ "$DRY_RUN" = true ]; then echo -en "\nYou can find files to inject in $INJECT_TMPDIR1 - press Enter to continue with clean up: "; read; fi
+clean_up
+if [ ! "$QUIET" = true ]; then
+  echo -en "\nFinished Installation at: "; date
+  echo -e "\nCalling: virsh $CONNECT_VIRSH_URI list --all"
+fi
+if [ ! "$DRY_RUN" = true ]; then virsh $CONNECT_VIRSH_URI list --all; fi
+# Run FINISHED_CMD:
+if [ -n "$FINISHED_CMD" ]; then
+  if [ ! "$QUIET" = true ]; then echo -e "\nCalling: $FINISHED_CMD"; fi
+  if [ ! "$DRY_RUN" = true ]; then sleep 20; /bin/bash -c "$FINISHED_CMD"; fi
+fi

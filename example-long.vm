@@ -1,0 +1,46 @@
+# Long example VM for possible configs:
+# * Only sets PRESEED_IP6_SUFFIX here and using all other defaults from .virt-install-vm.cfg & virt-install-vm.cfg.
+# * But still showing commented options, which you often will change in a .vm file.
+#DRY_RUN=true
+
+#VM_NAME="example"
+#VM_RAM="256"
+#VM_NET="net-ext"
+#VM_NET2="net-nat"
+#VM_DISK_NAME=$VM_NAME  # Need to be set, if VM_NAME is set/changed in this file (see variable precedence).
+#VM_DISK_SIZE="8"
+#VM_OS_VARIANT="auto"
+#VM_INSTALL_SRC_LOCATION="http://ftp.de.debian.org/debian/dists/stretch/main/installer-amd64"
+
+#PRESEED_TEMPLATE="example-stretch-hetzner.preseed"
+
+#INJECT_SSH_PUBKEY="$HOME/.ssh/id_rsa.pub"
+#INJECT_POSTINSTALL="example-post-install.sh"
+#INJECT_FILES="$INJECT_POSTINSTALL $INJECT_SSH_PUBKEY $1 $PRESEED_TEMPLATE virt-install-vm.cfg"  # Need to be set, if one of the Vars is set/changed in this file (see variable precedence).
+
+PRESEED_IP6_SUFFIX="2"
+#PRESEED_IP4_ADDR="192.168.1.42"
+#PRESEED_HOSTNAME=$VM_NAME  # Need to be set, if VM_NAME is set/changed in this file (see variable precedence).
+#PRESEED_DOMAIN="example.com"
+#PRESEED_USERNAME="admin-name"
+#PRESEED_USERFULLNAME="Admin full name"
+#PRESEED_PWDHASH=""
+#PRESEED_USER_SPECIAL=""
+
+#PRESEED_TASKSEL="ssh-server"
+#PRESEED_PACKAGES="vim htop unattended-upgrades"
+#PRESEED_PACKAGES_DEBCONF="unattended-upgrades unattended-upgrades/enable_auto_updates boolean true"
+
+#PRESEED_LATECOMMAND="mkdir -p /target/tmp/p-i; tar -xf /preseed.tar -C /target/tmp/p-i; cp /preseed.cfg /target/tmp/p-i/; \
+#in-target /bin/bash /tmp/p-i/$INJECT_POSTINSTALL admin-login $PRESEED_USERNAME $INJECT_SSH_PUBKEY; \
+#in-target /bin/bash /tmp/p-i/$INJECT_POSTINSTALL ssh-nopassword; \
+#in-target /bin/bash /tmp/p-i/$INJECT_POSTINSTALL inet-static-p2p eth0 $PRESEED_IP4_ADDR 192.168.1.1; \
+#in-target /bin/bash /tmp/p-i/$INJECT_POSTINSTALL inet-static-p2p ens3 $PRESEED_IP4_ADDR 192.168.1.1; \
+#in-target /bin/bash /tmp/p-i/$INJECT_POSTINSTALL inet-dhcp eth1; \
+#in-target /bin/bash /tmp/p-i/$INJECT_POSTINSTALL inet-dhcp ens4; \
+#in-target /bin/bash /tmp/p-i/$INJECT_POSTINSTALL adm-group $PRESEED_USERNAME; \
+#in-target /bin/bash /tmp/p-i/$INJECT_POSTINSTALL motd motd; \
+#in-target /bin/bash /tmp/p-i/$INJECT_POSTINSTALL doku-install-preseed"
+
+#FINISHED_CMD="cd path-to; ansible-playbook bootstrap.yml -i $PRESEED_HOSTNAME.$PRESEED_DOMAIN, -u $PRESEED_USERNAME --private-key=${INJECT_SSH_PUBKEY%.*} --ssh-common-args='-o StrictHostKeyChecking=no'"
+#FINISHED_CMD="cd path-to; ansible-playbook bootstrap.yml -i $PRESEED_IP6_PREFIX$PRESEED_IP6_SUFFIX, -u $PRESEED_USERNAME --private-key=${INJECT_SSH_PUBKEY%.*} --ssh-common-args='-o StrictHostKeyChecking=no'"

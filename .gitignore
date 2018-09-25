@@ -1,0 +1,15 @@
+# Emacs backup files...
+*~
+# Mac OS X stuff...
+.DS_Store
+# Vim swap files
+*.swp
+*.swo
+# ansible, test output & others
+*.retry
+*.out
+*.lock
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

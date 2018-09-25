@@ -1,0 +1,16 @@
+# Short example VM for possible configs:
+# * Sets RAM, PRESEED_IP6_SUFFIX & PRESEED_LATECOMMAND (with only few calls to example-post-install.sh).
+
+VM_RAM="256"
+
+#INJECT_SSH_PUBKEY="$HOME/.ssh/id_rsa.pub"
+#INJECT_FILES="$INJECT_POSTINSTALL $INJECT_SSH_PUBKEY $1 $PRESEED_TEMPLATE virt-install-vm.cfg"  # Need to be set, if one of the Vars is set/changed in this file (see variable precedence).
+
+PRESEED_IP6_SUFFIX="2"
+
+PRESEED_LATECOMMAND="mkdir -p /target/tmp/p-i; tar -xf /preseed.tar -C /target/tmp/p-i; cp /preseed.cfg /target/tmp/p-i/; \
+in-target /bin/bash /tmp/p-i/$INJECT_POSTINSTALL admin-login $PRESEED_USERNAME $INJECT_SSH_PUBKEY; \
+in-target /bin/bash /tmp/p-i/$INJECT_POSTINSTALL ssh-nopassword; \
+in-target /bin/bash /tmp/p-i/$INJECT_POSTINSTALL doku-install-preseed"
+
+#FINISHED_CMD="cd path-to; ansible-playbook bootstrap.yml -i $PRESEED_HOSTNAME.$PRESEED_DOMAIN, -u $PRESEED_USERNAME --private-key=${INJECT_SSH_PUBKEY%.*} --ssh-common-args='-o StrictHostKeyChecking=no'"
